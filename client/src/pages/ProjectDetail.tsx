@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Bookmark, Share2, Eye, Users, AlertCircle, UserPlus, UserCheck } from 'lucide-react'
+import { Bookmark, UserPlus, UserCheck } from 'lucide-react'
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -17,7 +17,6 @@ export default function ProjectDetail() {
   const [posting, setPosting] = useState(false)
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [views, setViews] = useState(0)
-  const [showShareModal, setShowShareModal] = useState(false)
   const [collabFollowing, setCollabFollowing] = useState<{[id: string]: boolean}>({})
 
   const fetchProject = async () => {
@@ -88,8 +87,6 @@ export default function ProjectDetail() {
     }
   }, [user, project])
 
-  const hasLiked = user && likes.includes(user.id)
-
   const handleLike = async () => {
     if (!token) return
     try {
@@ -114,39 +111,6 @@ export default function ProjectDetail() {
       if (!res.ok) throw new Error('Failed to update bookmark')
       const data = await res.json()
       setIsBookmarked(data.bookmarked)
-    } catch (err: any) {
-      setError(err.message)
-    }
-  }
-
-  const handleShare = () => {
-    setShowShareModal(true)
-    const url = window.location.href
-    navigator.clipboard.writeText(url)
-      .then(() => {
-        const successMessage = document.createElement('div')
-        successMessage.className = 'fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg'
-        successMessage.textContent = 'Link copied to clipboard!'
-        document.body.appendChild(successMessage)
-        setTimeout(() => successMessage.remove(), 3000)
-      })
-      .catch(console.error)
-  }
-
-  const handleStatusChange = async (newStatus: 'active' | 'completed' | 'on-hold') => {
-    if (!token || !user || !project || project.author._id !== user.id) return
-    try {
-      const res = await fetch(`/api/projects/${id}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: newStatus })
-      })
-      if (!res.ok) throw new Error('Failed to update status')
-      const data = await res.json()
-      setProject(prev => ({ ...prev, status: data.status }))
     } catch (err: any) {
       setError(err.message)
     }
@@ -378,7 +342,7 @@ export default function ProjectDetail() {
                   ${isBookmarked ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-gray-100 text-gray-400 border-gray-200 hover:bg-yellow-50 hover:text-yellow-600'}`}
                 title={user ? (isBookmarked ? 'Remove bookmark' : 'Bookmark') : 'Sign in to bookmark'}
               >
-                <Bookmark className="w-5 h-5" fill={isBookmarked ? '#facc15' : 'none'} stroke={isBookmarked ? '#facc15' : 'currentColor'} />
+                <svg className="w-5 h-5" fill={isBookmarked ? '#facc15' : 'none'} stroke={isBookmarked ? '#facc15' : 'currentColor'} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
                 <span>{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
               </button>
             </div>

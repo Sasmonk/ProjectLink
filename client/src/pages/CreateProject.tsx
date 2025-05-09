@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 export default function CreateProject() {
   const navigate = useNavigate()
   const { token } = useAuth()
@@ -30,7 +33,7 @@ export default function CreateProject() {
     setIsSubmitting(true)
     setError(null)
     try {
-      const response = await fetch('/api/projects', {
+      const response = await fetch(`${API_URL}/projects`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

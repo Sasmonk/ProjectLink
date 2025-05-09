@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 export default function Leaderboard() {
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -10,7 +13,7 @@ export default function Leaderboard() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/projects');
+        const res = await fetch(`${API_URL}/projects`);
         if (!res.ok) throw new Error('Failed to fetch projects');
         const data = await res.json();
         // Sort by likes descending

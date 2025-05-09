@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Bookmark, UserPlus, UserCheck } from 'lucide-react'
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 export default function ProjectDetail() {
   const { id } = useParams()
   const { user, token } = useAuth()
@@ -23,7 +26,7 @@ export default function ProjectDetail() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(`/api/projects/${id}`)
+      const res = await fetch(`${API_URL}/projects/${id}`)
       if (!res.ok) throw new Error('Failed to fetch project')
       const data = await res.json()
       setProject(data)
@@ -51,7 +54,7 @@ export default function ProjectDetail() {
       setCommentsLoading(true)
       setCommentsError(null)
       try {
-        const res = await fetch(`/api/projects/${id}/comments`)
+        const res = await fetch(`${API_URL}/projects/${id}/comments`)
         if (!res.ok) throw new Error('Failed to fetch comments')
         const data = await res.json()
         setComments(data)
@@ -67,7 +70,7 @@ export default function ProjectDetail() {
   // Track view
   useEffect(() => {
     if (id) {
-      fetch(`/api/projects/${id}/view`, { method: 'POST' })
+      fetch(`${API_URL}/projects/${id}/view`, { method: 'POST' })
         .then(res => res.json())
         .then(data => setViews(data.views))
         .catch(console.error)
@@ -90,7 +93,7 @@ export default function ProjectDetail() {
   const handleLike = async () => {
     if (!token) return
     try {
-      const res = await fetch(`/api/projects/${id}/${project?.likes?.includes(user?.id) ? 'unlike' : 'like'}`, {
+      const res = await fetch(`${API_URL}/projects/${id}/${project?.likes?.includes(user?.id) ? 'unlike' : 'like'}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -104,7 +107,7 @@ export default function ProjectDetail() {
   const handleBookmark = async () => {
     if (!token || !user) return
     try {
-      const res = await fetch(`/api/projects/${id}/bookmark`, {
+      const res = await fetch(`${API_URL}/projects/${id}/bookmark`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -122,7 +125,7 @@ export default function ProjectDetail() {
     if (!newComment.trim() || !token) return
     setPosting(true)
     try {
-      const res = await fetch(`/api/projects/${id}/comments`, {
+      const res = await fetch(`${API_URL}/projects/${id}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -164,7 +167,7 @@ export default function ProjectDetail() {
     if (!window.confirm('Are you sure you want to delete this comment?')) return
     
     try {
-      const res = await fetch(`/api/projects/${id}/comments/${commentId}`, {
+      const res = await fetch(`${API_URL}/projects/${id}/comments/${commentId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -196,7 +199,7 @@ export default function ProjectDetail() {
   const handleFollowCollab = async (collabId: string) => {
     if (!token) return
     try {
-      const res = await fetch(`/api/users/${collabId}/follow`, {
+      const res = await fetch(`${API_URL}/users/${collabId}/follow`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -206,7 +209,7 @@ export default function ProjectDetail() {
   const handleUnfollowCollab = async (collabId: string) => {
     if (!token) return
     try {
-      const res = await fetch(`/api/users/${collabId}/unfollow`, {
+      const res = await fetch(`${API_URL}/users/${collabId}/unfollow`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })

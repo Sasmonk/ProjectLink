@@ -4,6 +4,9 @@ import { User, Project } from '../types/User'
 import { exportCSV } from '../utils/exportCSV'
 import { MoreVertical, Shield, UserX, UserCheck, Trash2 } from 'lucide-react'
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 interface DashboardStats {
   totalUsers: number
   totalProjects: number
@@ -24,7 +27,7 @@ export default function Admin() {
   // Fetch dashboard stats
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/admin/stats', {
+      const res = await fetch(`${API_URL}/admin/stats`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) throw new Error('Failed to fetch stats')
@@ -38,7 +41,7 @@ export default function Admin() {
   // Fetch users
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(`${API_URL}/admin/users`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) throw new Error('Failed to fetch users')
@@ -52,7 +55,7 @@ export default function Admin() {
   // Fetch projects
   const fetchProjects = async () => {
     try {
-      const res = await fetch('/api/admin/projects', {
+      const res = await fetch(`${API_URL}/admin/projects`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) throw new Error('Failed to fetch projects')
@@ -68,7 +71,7 @@ export default function Admin() {
     if (!window.confirm('Are you sure you want to delete this user? This will also delete all their projects, likes, and comments.')) return
 
     try {
-      const res = await fetch(`/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_URL}/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -92,7 +95,7 @@ export default function Admin() {
   // Add these handlers inside the Admin component
   const handleRoleChange = async (userId: string, isAdmin: boolean) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}/role`, {
+      const res = await fetch(`${API_URL}/admin/users/${userId}/role`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ isAdmin }),
@@ -106,7 +109,7 @@ export default function Admin() {
 
   const handleBanChange = async (userId: string, banned: boolean) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}/ban`, {
+      const res = await fetch(`${API_URL}/admin/users/${userId}/ban`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ banned }),

@@ -36,6 +36,9 @@ interface Stats {
   totalFollowers: number
 }
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 const Dashboard = () => {
   const { user, token, logout } = useAuth()
   const navigate = useNavigate()
@@ -104,12 +107,12 @@ const Dashboard = () => {
       }
 
       // First check if the API is accessible
-      const healthCheck = await fetch('/api/projects')
+      const healthCheck = await fetch(`${API_URL}/projects`)
       if (!healthCheck.ok) {
         throw new Error('API server is not responding')
       }
 
-      const projectsRes = await fetch(`/api/projects?author=${userId}`, {
+      const projectsRes = await fetch(`${API_URL}/projects?author=${userId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -143,7 +146,7 @@ const Dashboard = () => {
       const totalComments = projects.reduce((sum: number, project: any) => sum + (project.comments?.length || 0), 0)
 
       // Fetch user data
-      const userRes = await fetch(`/api/users/${userId}`, {
+      const userRes = await fetch(`${API_URL}/users/${userId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -285,7 +288,7 @@ const Dashboard = () => {
       return
     }
     try {
-      const res = await fetch('/api/users/notifications', {
+      const res = await fetch(`${API_URL}/users/notifications`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (res.status === 401) {
@@ -347,7 +350,7 @@ const Dashboard = () => {
         collaborators: editForm.collaborators.map((c: any) => c._id)
       }
 
-      const res = await fetch(`/api/projects/${editId}`, {
+      const res = await fetch(`${API_URL}/projects/${editId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -372,7 +375,7 @@ const Dashboard = () => {
     if (!window.confirm('Are you sure you want to delete this project?')) return
     setDeleteId(id)
     try {
-      const res = await fetch(`/api/projects/${id}`, {
+      const res = await fetch(`${API_URL}/projects/${id}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -414,7 +417,7 @@ const Dashboard = () => {
   // Fetch bookmarked projects
   const fetchBookmarkedProjects = async () => {
     if (!user || !token) return
-    const res = await fetch(`/api/users/${user.id}/bookmarks`, {
+    const res = await fetch(`${API_URL}/users/${user.id}/bookmarks`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     if (res.ok) {
@@ -425,7 +428,7 @@ const Dashboard = () => {
   // Remove bookmark handler
   const handleRemoveBookmark = async (projectId: string) => {
     if (!token) return
-    const res = await fetch(`/api/projects/${projectId}/bookmark`, {
+    const res = await fetch(`${API_URL}/projects/${projectId}/bookmark`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -443,7 +446,7 @@ const Dashboard = () => {
     }
     setCollabLoading(true)
     try {
-      const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`)
+      const res = await fetch(`${API_URL}/users/search?q=${encodeURIComponent(q)}`)
       if (!res.ok) {
         throw new Error('Search failed')
       }

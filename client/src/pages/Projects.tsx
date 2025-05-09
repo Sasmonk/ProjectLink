@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Search, Heart, Tag } from 'lucide-react'
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 export default function Projects() {
   const { user, token } = useAuth()
   const [projects, setProjects] = useState<any[]>([])
@@ -17,7 +20,7 @@ export default function Projects() {
     setLoading(true)
     setError(null)
     try {
-      let url = '/api/projects?'
+      let url = `${API_URL}/projects?`
       if (searchQuery) url += `search=${encodeURIComponent(searchQuery)}&`
       if (selectedTag) url += `tags=${encodeURIComponent(selectedTag)}&`
       const res = await fetch(url)
@@ -48,7 +51,7 @@ export default function Projects() {
   const handleLike = async (projectId: string, liked: boolean) => {
     if (!token || !user) return
     try {
-      const res = await fetch(`/api/projects/${projectId}/${liked ? 'unlike' : 'like'}`, {
+      const res = await fetch(`${API_URL}/projects/${projectId}/${liked ? 'unlike' : 'like'}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })

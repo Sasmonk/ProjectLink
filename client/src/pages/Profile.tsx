@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
+// @ts-ignore
+const API_URL = import.meta.env.VITE_API_URL
+
 export default function Profile() {
   const { id } = useParams()
   if (!id) return <div>User not found</div>
@@ -24,7 +27,7 @@ export default function Profile() {
         setError(null)
 
         // Fetch user data
-        const userRes = await fetch(`/api/users/${id}`)
+        const userRes = await fetch(`${API_URL}/users/${id}`)
         if (!userRes.ok) throw new Error('Failed to fetch user')
         const userData = await userRes.json()
         setProfileUser(userData)
@@ -35,7 +38,7 @@ export default function Profile() {
           setIsFollowing(following.includes(userData._id))
         }
         // Fetch user's projects
-        const projectsRes = await fetch(`/api/projects?author=${id}`)
+        const projectsRes = await fetch(`${API_URL}/projects?author=${id}`)
         if (!projectsRes.ok) throw new Error('Failed to fetch projects')
         const projectsData = await projectsRes.json()
         setProjects(projectsData)
@@ -69,7 +72,7 @@ export default function Profile() {
     if (!token) return
     setEditLoading(true)
     try {
-      const res = await fetch('/api/users/profile', {
+      const res = await fetch(`${API_URL}/users/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -96,7 +99,7 @@ export default function Profile() {
     if (!user || !token || !profileUser) return
     setFollowLoading(true)
     try {
-      const res = await fetch(`/api/users/${profileUser._id}/follow`, {
+      const res = await fetch(`${API_URL}/users/${profileUser._id}/follow`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -113,7 +116,7 @@ export default function Profile() {
     if (!user || !token || !profileUser) return
     setFollowLoading(true)
     try {
-      const res = await fetch(`/api/users/${profileUser._id}/unfollow`, {
+      const res = await fetch(`${API_URL}/users/${profileUser._id}/unfollow`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       })

@@ -1,20 +1,8 @@
 import mongoose from 'mongoose'
 import bcrypt from 'bcryptjs'
+import { IUser } from '../types/express'
 
-export interface IUser extends mongoose.Document {
-  name: string
-  email: string
-  password: string
-  institution: string
-  avatar?: string
-  createdAt: Date
-  updatedAt: Date
-  followers: mongoose.Types.ObjectId[]
-  following: mongoose.Types.ObjectId[]
-  comparePassword(candidatePassword: string): Promise<boolean>
-}
-
-const userSchema = new mongoose.Schema({
+const userSchema = new mongoose.Schema<IUser>({
   name: {
     type: String,
     required: [true, 'Name is required'],
@@ -35,29 +23,50 @@ const userSchema = new mongoose.Schema({
   },
   institution: {
     type: String,
-    required: [true, 'Institution is required'],
     trim: true,
+    default: ''
   },
   avatar: {
     type: String,
+    default: '',
   },
+  isAdmin: {
+    type: Boolean,
+    default: false
+  },
+  banned: {
+    type: Boolean,
+    default: false
+  },
+  bio: {
+    type: String,
+    default: '',
+  },
+  skills: [{
+    type: String,
+    default: []
+  }],
   followers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    default: [],
   }],
   following: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    default: [],
   }],
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 }, {
   timestamps: true,
 })
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next()
+userSchema.pre('save', async function(this: IUser, next) {
+  if (!this.isModified('password')) {
+    return next()
+  }
 
   try {
     const salt = await bcrypt.genSalt(10)
@@ -70,7 +79,12 @@ userSchema.pre('save', async function(next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password)
+  try {
+    return await bcrypt.compare(candidatePassword, this.password)
+  } catch (error) {
+    throw error
+  }
 }
 
-export default mongoose.model<IUser>('User', userSchema) 
+const User = mongoose.model<IUser>('User', userSchema)
+export { User } 

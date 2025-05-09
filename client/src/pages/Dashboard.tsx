@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Plus } from 'lucide-react'
+import { Plus, UserPlus, Heart, MessageCircle, Bell } from 'lucide-react'
+import { exportCSV } from '../utils/exportCSV'
 
 interface Activity {
   id: string
@@ -23,7 +24,9 @@ interface Notification {
   type: string
   message: string
   read: boolean
-  timestamp: string
+  timestamp?: string
+  _id?: string
+  createdAt?: string
 }
 
 interface Stats {
@@ -33,8 +36,9 @@ interface Stats {
   totalFollowers: number
 }
 
-export default function Dashboard() {
-  const { user, token } = useAuth()
+const Dashboard = () => {
+  const { user, token, logout } = useAuth()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'activity' | 'notifications'>('activity')
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -52,15 +56,36 @@ export default function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set())
+  const [readNotifications, setReadNotifications] = useState<Set<string>>(() => {
+    // Optionally, persist in localStorage
+    const saved = localStorage.getItem('readNotifications')
+    return saved ? new Set(JSON.parse(saved)) : new Set()
+  })
+  const notificationsRef = useRef<Notification[]>([])
+  const [activeProjectTab, setActiveProjectTab] = useState<'recent' | 'bookmarked'>('recent')
+  const [bookmarkedProjects, setBookmarkedProjects] = useState<any[]>([])
+  const [collabSearch, setCollabSearch] = useState('')
+  const [collabResults, setCollabResults] = useState<any[]>([])
+  const [collabLoading, setCollabLoading] = useState(false)
+
+  // Persist readNotifications in localStorage
+  useEffect(() => {
+    localStorage.setItem('readNotifications', JSON.stringify(Array.from(readNotifications)))
+  }, [readNotifications])
+
+  // When notifications are set, update their read status based on readNotifications
+  useEffect(() => {
+    if (notifications.length > 0) {
+      notificationsRef.current = notifications.map(n => ({ ...n, read: readNotifications.has(n.id) }))
+    }
+  }, [notifications, readNotifications])
 
   // Fetch user's projects and stats
   const fetchProjectsAndStats = async () => {
     if (!user || !token) {
-      console.error('No user or token available')
+      navigate('/login')
       return
     }
-
     setLoading(true)
     setError(null)
 
@@ -91,6 +116,12 @@ export default function Dashboard() {
         }
       })
 
+      if (projectsRes.status === 401) {
+        logout && logout()
+        navigate('/login')
+        return
+      }
+
       if (!projectsRes.ok) {
         const errorText = await projectsRes.text()
         console.error('Projects API error:', {
@@ -118,6 +149,12 @@ export default function Dashboard() {
           'Content-Type': 'application/json'
         }
       })
+
+      if (userRes.status === 401) {
+        logout && logout()
+        navigate('/login')
+        return
+      }
 
       if (!userRes.ok) {
         const errorText = await userRes.text()
@@ -198,36 +235,77 @@ export default function Dashboard() {
       activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       setActivities(activities)
 
-      // Create notifications list with respect to read status
-      const notifications = activities.slice(0, 5).map(activity => ({
-        id: activity.id,
-        type: activity.type,
-        message: activity.type === 'like' 
-          ? `${activity.user.name} liked your project "${activity.project?.title}"`
-          : activity.type === 'comment'
-          ? `${activity.user.name} commented on your project "${activity.project?.title}": "${activity.content}"`
-          : `${activity.user.name} started following you`,
-        read: readNotifications.has(activity.id),
-        timestamp: activity.timestamp
-      }))
-      setNotifications(notifications)
+      // Helper to group and deduplicate notifications
+      function groupAndDeduplicateNotifications(activities: Activity[]): Notification[] {
+        const seen = new Set<string>()
+        const grouped: Notification[] = []
+        for (const activity of activities) {
+          // Group by type+project+user+content (for comments)
+          const key = `${activity.type}-${activity.project?._id || ''}-${activity.user._id}-${activity.content || ''}`
+          if (!seen.has(key)) {
+            seen.add(key)
+            grouped.push({
+              id: activity.id,
+              type: activity.type,
+              message: activity.type === 'like'
+                ? `${activity.user.name} liked your project "${activity.project?.title}"`
+                : activity.type === 'comment'
+                ? `${activity.user.name} commented on your project "${activity.project?.title}": "${activity.content}"`
+                : `${activity.user.name} started following you`,
+              read: readNotifications.has(activity.id),
+              timestamp: activity.timestamp
+            })
+          }
+        }
+        // Sort by timestamp desc
+        grouped.sort(
+          (a, b) =>
+            new Date(String(b.timestamp ?? b.createdAt ?? '')).getTime() -
+            new Date(String(a.timestamp ?? a.createdAt ?? '')).getTime()
+        )
+        return grouped
+      }
+
+      // Replace the notifications logic:
+      const dedupedNotifications = groupAndDeduplicateNotifications(activities)
+      setNotifications(dedupedNotifications)
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
-      setError(error instanceof Error ? error.message : 'Failed to fetch dashboard data')
+      setError('Failed to load your dashboard. Please try logging in again.')
     } finally {
       setLoading(false)
     }
   }
 
-  // Add a refresh function that can be called after creating a new project
-  const refreshDashboard = () => {
-    fetchProjectsAndStats()
+  // Fetch notifications from backend
+  const fetchNotifications = async () => {
+    if (!token) {
+      navigate('/login')
+      return
+    }
+    try {
+      const res = await fetch('/api/users/notifications', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.status === 401) {
+        logout && logout()
+        navigate('/login')
+        return
+      }
+      if (!res.ok) throw new Error('Failed to fetch notifications')
+      const data = await res.json()
+      setNotifications(data)
+    } catch (error) {
+      setError('Failed to load notifications. Please try logging in again.')
+    }
   }
 
   useEffect(() => {
     if (user && token) {
       fetchProjectsAndStats()
+      fetchBookmarkedProjects()
+      fetchNotifications()
     }
   }, [user, token])
 
@@ -242,6 +320,8 @@ export default function Dashboard() {
       githubUrl: project.githubUrl || '',
       demoUrl: project.demoUrl || '',
       progress: project.progress ?? 0,
+      status: project.status || 'active',
+      collaborators: project.collaborators || []
     })
     setIsModalOpen(true)
   }
@@ -257,26 +337,32 @@ export default function Dashboard() {
     setEditId(null)
     setEditForm(null)
   }
-  const saveEdit = async (id: string) => {
+  const handleSave = async () => {
+    if (!editId || !token) return
     setIsSaving(true)
     try {
-      const res = await fetch(`/api/projects/${id}`, {
+      const formData = {
+        ...editForm,
+        tags: editForm.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean),
+        collaborators: editForm.collaborators.map((c: any) => c._id)
+      }
+
+      const res = await fetch(`/api/projects/${editId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-          ...editForm,
-          tags: editForm.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
-          progress: Number(editForm.progress),
-        }),
+        body: JSON.stringify(formData)
       })
+
       if (!res.ok) throw new Error('Failed to update project')
-      closeModal()
-      fetchProjectsAndStats()
+      await fetchProjectsAndStats()
+      setIsModalOpen(false)
+      setEditId(null)
+      setEditForm(null)
     } catch (err: any) {
-      alert(err.message || 'Error updating project')
+      setError(err.message)
     } finally {
       setIsSaving(false)
     }
@@ -325,24 +411,99 @@ export default function Dashboard() {
     }
   }
 
+  // Fetch bookmarked projects
+  const fetchBookmarkedProjects = async () => {
+    if (!user || !token) return
+    const res = await fetch(`/api/users/${user.id}/bookmarks`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (res.ok) {
+      setBookmarkedProjects(await res.json())
+    }
+  }
+
+  // Remove bookmark handler
+  const handleRemoveBookmark = async (projectId: string) => {
+    if (!token) return
+    const res = await fetch(`/api/projects/${projectId}/bookmark`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (res.ok) {
+      setBookmarkedProjects(prev => prev.filter(p => p._id !== projectId))
+    }
+  }
+
+  // Search for users to add as collaborators
+  const handleCollabSearch = async (q: string) => {
+    setCollabSearch(q)
+    if (!q.trim() || q.trim().length < 2) {
+      setCollabResults([])
+      return
+    }
+    setCollabLoading(true)
+    try {
+      const res = await fetch(`/api/users/search?q=${encodeURIComponent(q)}`)
+      if (!res.ok) {
+        throw new Error('Search failed')
+      }
+      const results = await res.json()
+      setCollabResults(results)
+    } catch (error) {
+      console.error('Search error:', error)
+      setCollabResults([])
+    } finally {
+      setCollabLoading(false)
+    }
+  }
+
+  // Add collaborator
+  const handleAddCollaborator = (userToAdd: any) => {
+    if (!userToAdd || !userToAdd._id) return;
+    if (user && (user.id === userToAdd._id || user._id === userToAdd._id)) return; // Prevent adding yourself
+    if (editForm.collaborators && editForm.collaborators.filter(Boolean).some((c: any) => c && c._id === userToAdd._id)) return;
+    setEditForm({
+      ...editForm,
+      collaborators: [...(editForm.collaborators || []), userToAdd]
+    })
+    setCollabSearch(''); // Clear search field after adding
+    setCollabResults([]); // Optionally clear results
+  }
+
+  // Remove collaborator
+  const handleRemoveCollaborator = (userId: string) => {
+    setEditForm({
+      ...editForm,
+      collaborators: (editForm.collaborators || []).filter((c: any) => c && c._id !== userId)
+    })
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-500 text-lg font-semibold">
+        {error}
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-pink-50 to-yellow-50 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-pink-50 to-yellow-50 py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="mb-12 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-bold text-primary flex items-center gap-2">
+            <h1 className="text-4xl sm:text-5xl font-extrabold text-primary flex items-center gap-2 mb-2">
               <span role="img" aria-label="wave">👋</span> Welcome, {user?.name || 'Student'}!
             </h1>
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="text-lg text-gray-700">
               Here's what's happening with your projects.
             </p>
           </div>
           <Link
             to="/create-project"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-pink-500 via-orange-400 to-yellow-400 text-white font-semibold shadow-lg hover:scale-105 transition"
+            className="inline-flex items-center gap-2 px-7 py-3 rounded-full bg-primary text-white font-bold shadow-lg hover:bg-primary/90 transition text-lg"
           >
-            <Plus className="w-5 h-5" /> Create Project
+            <Plus className="w-6 h-6" /> Create Project
           </Link>
         </div>
 
@@ -417,9 +578,9 @@ export default function Dashboard() {
                 }`}
               >
                 Notifications
-                {notifications.some(n => !n.read) && (
+                {Array.from(readNotifications).length < notifications.length && notifications.some(n => !readNotifications.has(n.id)) && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center animate-bounce">
-                    {notifications.filter(n => !n.read).length}
+                    {notifications.filter(n => !readNotifications.has(n.id)).length}
                   </span>
                 )}
               </button>
@@ -478,164 +639,308 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="space-y-6">
-                {notifications.map(notification => (
-                  <div
-                    key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
-                    className={`flex items-start space-x-4 cursor-pointer transition-colors ${
-                      !notification.read ? 'bg-primary/5 rounded-lg p-4 hover:bg-primary/10' : 'hover:bg-gray-50 rounded-lg p-4'
-                    }`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">{notification.message}</p>
-                      <p className="text-sm text-gray-500">{formatTimestamp(notification.timestamp)}</p>
-                    </div>
-                    {!notification.read && (
-                      <div className="flex-shrink-0">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary text-white">
-                          New
-                        </span>
+                <div className="mb-4 flex justify-between items-center">
+                  <span className="text-lg font-semibold text-primary">Notifications</span>
+                  {notifications.some(n => !n.read) && (
+                    <button
+                      onClick={() => {
+                        setReadNotifications(new Set(notifications.map(n => n.id)))
+                        setNotifications(notifications.map(n => ({ ...n, read: true })))
+                      }}
+                      className="text-xs px-3 py-1 rounded-full bg-primary text-white hover:bg-primary-dark shadow"
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-6 max-h-96 overflow-y-auto pr-2">
+                  {notifications.length === 0 && (
+                    <div className="text-center text-gray-500 py-4">No notifications</div>
+                  )}
+                  {notifications.map(notification => {
+                    let icon, iconBg, iconColor, label
+                    if (notification.type === 'follow') {
+                      icon = <UserPlus className="w-5 h-5" />
+                      iconBg = 'bg-blue-100'
+                      iconColor = 'text-blue-600'
+                      label = 'New Follower'
+                    } else if (notification.type === 'like') {
+                      icon = <Heart className="w-5 h-5" />
+                      iconBg = 'bg-pink-100'
+                      iconColor = 'text-pink-600'
+                      label = 'Project Liked'
+                    } else if (notification.type === 'comment') {
+                      icon = <MessageCircle className="w-5 h-5" />
+                      iconBg = 'bg-green-100'
+                      iconColor = 'text-green-600'
+                      label = 'New Comment'
+                    } else {
+                      icon = <Bell className="w-5 h-5" />
+                      iconBg = 'bg-gray-200'
+                      iconColor = 'text-gray-600'
+                      label = 'Notification'
+                    }
+                    // Extract user name (first word(s) before the action)
+                    let name = ''
+                    let rest = notification.message
+                    const match = notification.message.match(/^([\w\s]+?) (started following you|liked your project|commented on your project)/)
+                    if (match) {
+                      name = match[1]
+                      rest = notification.message.replace(name, '').trim()
+                    }
+                    const timeAgo = (() => {
+                      const now = new Date()
+                      const created = new Date(String(notification.createdAt ?? notification.timestamp ?? ''))
+                      const diff = Math.floor((now.getTime() - created.getTime()) / 1000)
+                      if (diff < 60) return `${diff}s ago`
+                      if (diff < 3600) return `${Math.floor(diff/60)}m ago`
+                      if (diff < 86400) return `${Math.floor(diff/3600)}h ago`
+                      return created.toLocaleDateString()
+                    })()
+                    return (
+                      <div key={notification._id || notification.id} className="flex items-start gap-3 bg-white rounded-lg shadow p-3 relative">
+                        <div className={`flex items-center justify-center rounded-full w-9 h-9 ${iconBg}`}>{icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-gray-900">
+                            {name && <span className="font-bold text-primary mr-1">{name}</span>}
+                            {rest}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">{timeAgo}</div>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                ))}
-                {notifications.length === 0 && (
-                  <div className="text-center text-gray-500 py-4">No notifications</div>
-                )}
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
         </div>
 
         {/* Edit Modal */}
-        {isModalOpen && editId && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div 
-              className="bg-white rounded-xl shadow-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold text-primary">Edit Project</h3>
-                <button
-                  onClick={closeModal}
-                  className="text-gray-500 hover:text-gray-700"
-                  title="Close modal"
-                  aria-label="Close modal"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <form
-                className="space-y-4"
-                onSubmit={e => {
-                  e.preventDefault()
-                  saveEdit(editId)
-                }}
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Project Title</label>
-                    <input
-                      type="text"
-                      name="title"
-                      value={editForm.title}
-                      onChange={handleEditChange}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                      required
-                      placeholder="Project Title"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Short Description</label>
-                    <input
-                      type="text"
-                      name="description"
-                      value={editForm.description}
-                      onChange={handleEditChange}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                      required
-                      placeholder="Short Description"
-                    />
-                  </div>
-                </div>
+        {isModalOpen && editForm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-100">
+              <h2 className="text-2xl font-extrabold text-primary mb-6 tracking-tight">Edit Project</h2>
+              <form onSubmit={(e) => { e.preventDefault(); handleSave() }} className="space-y-6">
+                {/* Title */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Detailed Description</label>
-                  <textarea
-                    name="longDescription"
-                    value={editForm.longDescription}
-                    onChange={handleEditChange}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                    rows={4}
-                    placeholder="Detailed Description"
+                  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-title">Title</label>
+                  <input
+                    id="edit-title"
+                    type="text"
+                    value={editForm.title}
+                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    required
+                    placeholder="Enter project title"
+                    title="Project title"
                   />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Tags (comma separated)</label>
-                    <input
-                      type="text"
-                      name="tags"
-                      value={editForm.tags}
-                      onChange={handleEditChange}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                      placeholder="Tags (comma separated)"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Progress</label>
+                {/* Short Description */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-description">Short Description</label>
+                  <input
+                    id="edit-description"
+                    type="text"
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    required
+                    placeholder="Brief summary of your project"
+                    title="Short description"
+                  />
+                </div>
+                {/* Long Description */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-longdesc">Long Description</label>
+                  <textarea
+                    id="edit-longdesc"
+                    value={editForm.longDescription}
+                    onChange={(e) => setEditForm({ ...editForm, longDescription: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    rows={4}
+                    placeholder="Detailed description, goals, and features"
+                    title="Long description"
+                  />
+                </div>
+                {/* Tags */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-tags">Tags (comma-separated)</label>
+                  <input
+                    id="edit-tags"
+                    type="text"
+                    value={editForm.tags}
+                    onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    placeholder="e.g., react, node, mongodb"
+                    title="Project tags"
+                  />
+                </div>
+                {/* GitHub URL */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-github">GitHub URL</label>
+                  <input
+                    id="edit-github"
+                    type="url"
+                    value={editForm.githubUrl}
+                    onChange={(e) => setEditForm({ ...editForm, githubUrl: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    placeholder="https://github.com/username/repo"
+                    title="GitHub repository URL"
+                  />
+                </div>
+                {/* Demo URL */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-demo">Demo URL</label>
+                  <input
+                    id="edit-demo"
+                    type="url"
+                    value={editForm.demoUrl}
+                    onChange={(e) => setEditForm({ ...editForm, demoUrl: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
+                    placeholder="https://your-demo-url.com"
+                    title="Live demo URL"
+                  />
+                </div>
+                <hr className="my-4 border-gray-200" />
+                {/* Progress Section */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Progress</label>
+                  <div className="flex items-center gap-4">
                     <input
                       type="range"
-                      name="progress"
-                      min={0}
-                      max={100}
+                      min="0"
+                      max="100"
                       value={editForm.progress}
-                      onChange={handleEditChange}
-                      className="w-full"
+                      onChange={(e) => setEditForm({ ...editForm, progress: parseInt(e.target.value) })}
+                      className="flex-1 accent-primary"
                       title="Project progress"
-                      aria-label="Project progress"
                     />
-                    <div className="text-sm text-gray-600 mt-1">{editForm.progress}% complete</div>
+                    <span className="text-sm font-semibold text-primary w-12 text-right">{editForm.progress}%</span>
                   </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">GitHub URL</label>
-                    <input
-                      type="url"
-                      name="githubUrl"
-                      value={editForm.githubUrl}
-                      onChange={handleEditChange}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                      placeholder="GitHub URL"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Demo URL</label>
-                    <input
-                      type="url"
-                      name="demoUrl"
-                      value={editForm.demoUrl}
-                      onChange={handleEditChange}
-                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                      placeholder="Demo URL"
+                  <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        editForm.progress >= 100 ? 'bg-green-500' :
+                        editForm.progress >= 75 ? 'bg-blue-500' :
+                        editForm.progress >= 50 ? 'bg-primary' :
+                        editForm.progress >= 25 ? 'bg-yellow-500' :
+                        'bg-red-500'
+                      }`}
+                      style={{ width: `${editForm.progress}%` }}
                     />
                   </div>
                 </div>
-                <div className="flex justify-end gap-3 pt-4">
+                {/* Status Section */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, status: 'active' })}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow-sm border transition-colors ${
+                        editForm.status === 'active' ? 'bg-green-100 text-green-800 border-green-200' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-green-50'
+                      }`}
+                    >
+                      🚀 Active
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, status: 'completed' })}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow-sm border transition-colors ${
+                        editForm.status === 'completed' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-blue-50'
+                      }`}
+                    >
+                      ✅ Completed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, status: 'on-hold' })}
+                      className={`px-4 py-1.5 rounded-full text-sm font-semibold shadow-sm border transition-colors ${
+                        editForm.status === 'on-hold' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-yellow-50'
+                      }`}
+                    >
+                      ⏸️ On Hold
+                    </button>
+                  </div>
+                </div>
+                {/* Collaborators Section */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Collaborators</label>
+                  <input
+                    type="text"
+                    value={collabSearch}
+                    onChange={e => handleCollabSearch(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
+                    placeholder="Search users by name or email to add..."
+                  />
+                  {/* Selected Collaborators */}
+                  {editForm.collaborators && editForm.collaborators.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {editForm.collaborators.filter(Boolean).map((collab: any) => (
+                        <div key={collab._id} className="flex items-center gap-1 bg-gray-100 border border-gray-300 rounded-full px-2 py-1">
+                          <img
+                            src={collab.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(collab.name || collab.username || 'User')}`}
+                            alt={collab.name || collab.username || 'User'}
+                            className="w-7 h-7 rounded-full border border-gray-200 bg-white object-cover"
+                          />
+                          <span className="text-sm text-gray-700 font-medium mr-1">{collab.name || collab.username || 'User'}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCollaborator(collab._id)}
+                            className="text-gray-400 hover:text-red-500 text-lg px-1 rounded-full focus:outline-none"
+                            title="Remove collaborator"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {collabLoading && <div className="text-xs text-gray-400 mb-2">Searching...</div>}
+                  {collabResults.length > 0 && (
+                    <div className="space-y-2">
+                      {collabResults.map(user => (
+                        <div
+                          key={user._id}
+                          onClick={() => handleAddCollaborator(user)}
+                          className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg cursor-pointer"
+                        >
+                          <img
+                            src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
+                            alt={user.name}
+                            className="w-8 h-8 rounded-full"
+                          />
+                          <div>
+                            <div className="font-medium text-sm">{user.name}</div>
+                            <div className="text-xs text-gray-500">{user.email}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!collabLoading && collabSearch.length >= 2 && collabResults.length === 0 && (
+                    <div className="text-xs text-gray-500 py-2">No users found</div>
+                  )}
+                </div>
+                <hr className="my-4 border-gray-200" />
+                {/* Action Buttons */}
+                <div className="flex justify-end gap-2 mt-6">
                   <button
                     type="button"
-                    className="px-4 py-2 border rounded-lg text-gray-700 hover:bg-gray-50"
-                    onClick={closeModal}
-                    disabled={isSaving}
+                    onClick={() => {
+                      setIsModalOpen(false)
+                      setEditId(null)
+                      setEditForm(null)
+                    }}
+                    className="px-5 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-semibold shadow-sm border border-gray-200"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50"
                     disabled={isSaving}
+                    className="px-5 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark disabled:opacity-50 font-semibold shadow-sm border border-primary"
                   >
                     {isSaving ? 'Saving...' : 'Save Changes'}
                   </button>
@@ -701,10 +1006,46 @@ export default function Dashboard() {
                   )}
                 </div>
               ))}
+              <button
+                onClick={() => exportCSV(projects, 'my-projects.csv')}
+                className="px-4 py-2 mb-4 bg-primary text-white rounded-md hover:bg-primary-dark transition"
+              >
+                Export My Projects
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Bookmarked Projects Section */}
+        <div className="bg-white rounded-xl shadow p-6 mb-8">
+          <h2 className="text-xl font-semibold text-primary mb-4">Bookmarked Projects</h2>
+          {bookmarkedProjects.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">No bookmarked projects yet.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {bookmarkedProjects.map(project => (
+                <div
+                  key={project._id}
+                  className="bg-white rounded-xl shadow-md p-4 flex flex-col gap-2 relative cursor-pointer hover:shadow-lg transition"
+                  onClick={() => window.location.href = `/projects/${project._id}`}
+                >
+                  <h3 className="font-medium text-gray-900 mb-1">{project.title}</h3>
+                  <p className="text-gray-600 text-sm mb-2">{project.description}</p>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleRemoveBookmark(project._id) }}
+                    className="absolute top-4 right-4 text-blue-400 hover:text-red-500 font-semibold text-sm"
+                    title="Remove bookmark"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
       </div>
     </div>
   )
-} 
+}
+
+export default Dashboard 

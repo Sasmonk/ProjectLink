@@ -1,180 +1,189 @@
-import express from 'express'
-import User from '../models/User'
+import express, { Request, Response } from 'express'
+import { User } from '../models/User'
 import jwt from 'jsonwebtoken'
-import mongoose from 'mongoose'
+import mongoose, { Types } from 'mongoose'
+import { IUser } from '../types/express'
+import Project from '../models/Project'
+import Notification from '../models/Notification'
 
 const router = express.Router()
 
 // Auth middleware
-function auth(req: any, res: any, next: any) {
+function auth(req: Request, res: Response, next: express.NextFunction) {
   const token = req.headers.authorization?.split(' ')[1]
   if (!token) return res.status(401).json({ message: 'No token provided' })
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { userId: string }
-    req.userId = decoded.userId
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { user: { id: string } }
+    if (!decoded.user || !decoded.user.id || !mongoose.Types.ObjectId.isValid(decoded.user.id)) {
+      return res.status(401).json({ message: 'Invalid token' })
+    }
+    req.userId = decoded.user.id
     next()
   } catch {
     res.status(401).json({ message: 'Invalid token' })
   }
 }
 
-// Get user by ID
-router.get('/:id', auth, async (req, res) => {
+// Get notifications for the authenticated user
+router.get('/notifications', auth, async (req: Request, res: Response) => {
   try {
-    console.log('Fetching user with ID:', req.params.id)
-    console.log('Request headers:', req.headers)
-
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      console.error('Invalid user ID format:', req.params.id)
-      return res.status(400).json({ message: 'Invalid user ID' })
+    if (!req.userId || !mongoose.Types.ObjectId.isValid(req.userId)) {
+      return res.status(401).json({ message: 'Not authenticated' })
     }
-
-    const user = await User.findById(req.params.id)
-      .select('-password') // Exclude password
-      .populate({
-        path: 'followers',
-        select: 'name email avatar institution',
-        model: 'User'
-      })
-      .populate({
-        path: 'following',
-        select: 'name email avatar institution',
-        model: 'User'
-      })
-
-    if (!user) {
-      console.error('User not found with ID:', req.params.id)
-      return res.status(404).json({ message: 'User not found' })
-    }
-
-    // Ensure consistent ID field
-    const userData = {
-      ...user.toObject(),
-      id: user._id, // Add id field for frontend consistency
-      _id: user._id // Keep _id for backend consistency
-    }
-
-    console.log('Found user:', {
-      id: userData.id,
-      name: userData.name,
-      followersCount: userData.followers?.length || 0,
-      followingCount: userData.following?.length || 0
-    })
-
-    res.json(userData)
-  } catch (error: any) {
-    console.error('Error in GET /:id:', error)
-    console.error('Error stack:', error.stack)
-    res.status(500).json({ 
-      message: 'Error fetching user data',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    })
-  }
-})
-
-// Update current user profile
-router.put('/me', auth, async (req, res) => {
-  try {
-    const { name, institution, bio, avatar, skills } = req.body
-    const update: any = {}
-    if (name !== undefined) update.name = name
-    if (institution !== undefined) update.institution = institution
-    if (bio !== undefined) update.bio = bio
-    if (avatar !== undefined) update.avatar = avatar
-    if (skills !== undefined) update.skills = skills
-    const user = await User.findByIdAndUpdate(
-      req.userId,
-      { $set: update },
-      { new: true, runValidators: true }
-    )
-    if (!user) return res.status(404).json({ message: 'User not found' })
-    // Return updated user data (excluding password)
-    const userData = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      institution: user.institution,
-      avatar: user.avatar,
-      bio: user.bio,
-      skills: user.skills,
-    }
-    res.json(userData)
+    const notifications = await Notification.find({ user: req.userId })
+      .sort({ createdAt: -1 })
+      .limit(100)
+    res.json(notifications)
   } catch (error: any) {
     res.status(500).json({ message: error.message })
   }
 })
 
-// Follow a user
-router.post('/:id/follow', auth, async (req, res) => {
+// Get user profile
+router.get('/profile', auth, async (req: Request, res: Response) => {
   try {
-    if (req.userId === req.params.id) {
+    const user = await User.findById(req.userId).select('-password')
+    if (!user) return res.status(404).json({ message: 'User not found' })
+    res.json(user)
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Update user profile
+router.put('/profile', auth, async (req: Request, res: Response) => {
+  try {
+    const { name, institution, avatar, bio, skills } = req.body
+    const user = await User.findById(req.userId)
+    if (!user) return res.status(404).json({ message: 'User not found' })
+    
+    if (name) user.name = name
+    if (institution) user.institution = institution
+    if (avatar) user.avatar = avatar
+    if (bio) user.bio = bio
+    if (skills) user.skills = skills
+    
+    await user.save()
+    res.json(user)
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// --- User search endpoint for collaborators ---
+router.get('/search', async (req, res) => {
+  try {
+    const q = req.query.q
+    if (!q || typeof q !== 'string') {
+      return res.status(400).json({ message: 'Query parameter is required' })
+    }
+
+    const searchQuery = q.trim()
+    if (searchQuery.length < 2) {
+      return res.json([]) // Return empty array for short queries
+    }
+
+    const users = await User.find({
+      $or: [
+        { name: { $regex: searchQuery, $options: 'i' } },
+        { email: { $regex: searchQuery, $options: 'i' } }
+      ]
+    }).select('name email avatar institution')
+    
+    res.json(users)
+  } catch (error: any) {
+    console.error('Search error:', error)
+    res.status(500).json({ message: error.message || 'Search failed' })
+  }
+})
+
+// Get user by ID
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    const user = await User.findById(req.params.id).select('-password')
+    if (!user || !user.email) return res.status(404).json({ message: 'User not found' })
+    // Ensure followers and following are always arrays of string IDs
+    const userObj = user.toObject()
+    userObj.followers = (userObj.followers || []).map((id: any) => id.toString())
+    userObj.following = (userObj.following || []).map((id: any) => id.toString())
+    res.json(userObj)
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Follow user
+router.post('/:id/follow', auth, async (req: Request, res: Response) => {
+  try {
+    if (req.params.id === req.userId) {
       return res.status(400).json({ message: 'You cannot follow yourself' })
     }
-
-    const userToFollow = await User.findById(req.params.id)
-    if (!userToFollow) {
-      return res.status(404).json({ message: 'User not found' })
-    }
-
+    const user = await User.findById(req.params.id)
+    if (!user) return res.status(404).json({ message: 'User not found' })
+    
     const currentUser = await User.findById(req.userId)
-    if (!currentUser) {
-      return res.status(404).json({ message: 'Current user not found' })
+    if (!currentUser) return res.status(404).json({ message: 'Current user not found' })
+    
+    const targetUserId = new Types.ObjectId(req.params.id)
+    if (currentUser.following.includes(targetUserId)) {
+      return res.status(400).json({ message: 'You are already following this user' })
     }
-
-    // Check if already following
-    if (userToFollow.followers.includes(req.userId)) {
-      return res.status(400).json({ message: 'Already following' })
-    }
-
-    // Add to followers and following
-    userToFollow.followers.push(req.userId)
-    currentUser.following.push(req.params.id)
-
-    await Promise.all([userToFollow.save(), currentUser.save()])
-
-    res.json({ 
-      followers: userToFollow.followers.length,
-      following: currentUser.following.length
+    
+    currentUser.following.push(targetUserId)
+    user.followers.push(new Types.ObjectId(req.userId))
+    
+    await Promise.all([currentUser.save(), user.save()])
+    await Notification.create({
+      user: user._id,
+      type: 'follow',
+      message: `${currentUser.name} started following you`,
+      read: false
     })
+    res.json({ message: 'User followed successfully' })
   } catch (error: any) {
-    console.error('Error in follow:', error)
     res.status(500).json({ message: error.message })
   }
 })
 
-// Unfollow a user
-router.post('/:id/unfollow', auth, async (req, res) => {
+// Unfollow user
+router.post('/:id/unfollow', auth, async (req: Request, res: Response) => {
   try {
-    if (req.userId === req.params.id) {
+    if (req.params.id === req.userId) {
       return res.status(400).json({ message: 'You cannot unfollow yourself' })
     }
-
-    const userToUnfollow = await User.findById(req.params.id)
-    if (!userToUnfollow) {
-      return res.status(404).json({ message: 'User not found' })
-    }
-
+    const user = await User.findById(req.params.id)
+    if (!user) return res.status(404).json({ message: 'User not found' })
+    
     const currentUser = await User.findById(req.userId)
-    if (!currentUser) {
-      return res.status(404).json({ message: 'Current user not found' })
-    }
-
-    // Remove from followers and following
-    userToUnfollow.followers = userToUnfollow.followers.filter(
-      (id: any) => id.toString() !== req.userId
-    )
+    if (!currentUser) return res.status(404).json({ message: 'Current user not found' })
+    
+    const targetUserId = new Types.ObjectId(req.params.id)
     currentUser.following = currentUser.following.filter(
-      (id: any) => id.toString() !== req.params.id
+      (id: Types.ObjectId) => id.toString() !== targetUserId.toString()
     )
-
-    await Promise.all([userToUnfollow.save(), currentUser.save()])
-
-    res.json({ 
-      followers: userToUnfollow.followers.length,
-      following: currentUser.following.length
-    })
+    user.followers = user.followers.filter(
+      (id: Types.ObjectId) => id.toString() !== req.userId
+    )
+    
+    await Promise.all([currentUser.save(), user.save()])
+    res.json({ message: 'User unfollowed successfully' })
   } catch (error: any) {
-    console.error('Error in unfollow:', error)
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// --- User bookmarks endpoint ---
+router.get('/:id/bookmarks', async (req, res) => {
+  try {
+    const userId = req.params.id
+    if (!Types.ObjectId.isValid(userId)) return res.status(400).json({ message: 'Invalid user ID' })
+    const projects = await Project.find({ bookmarks: userId })
+      .populate('author', 'name email institution avatar')
+    res.json(projects)
+  } catch (error: any) {
     res.status(500).json({ message: error.message })
   }
 })

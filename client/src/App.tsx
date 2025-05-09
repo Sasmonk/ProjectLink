@@ -8,6 +8,7 @@ import Profile from './pages/Profile'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
+import Admin from './pages/Admin'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -25,6 +26,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  return user?.isAdmin ? <>{children}</> : <Navigate to="/" />
 }
 
 function Navigation() {
@@ -74,6 +80,18 @@ function Navigation() {
                   >
                     Dashboard
                   </Link>
+                  {user.isAdmin && (
+                    <Link
+                      to="/admin"
+                      className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                        isActive('/admin')
+                          ? 'border-primary text-gray-900'
+                          : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                      }`}
+                    >
+                      Admin
+                    </Link>
+                  )}
                 </>
               )}
             </div>
@@ -82,7 +100,7 @@ function Navigation() {
             {user ? (
               <div className="flex items-center space-x-4">
                 <Link
-                  to="/profile"
+                  to={`/profile/${user._id}`}
                   className="text-gray-500 hover:text-gray-700"
                 >
                   <img
@@ -138,7 +156,7 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/profile"
+        path="/profile/:id"
         element={
           <ProtectedRoute>
             <Profile />
@@ -151,6 +169,14 @@ function AppRoutes() {
           <ProtectedRoute>
             <Dashboard />
           </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <Admin />
+          </AdminRoute>
         }
       />
     </Routes>

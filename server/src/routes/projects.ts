@@ -1,13 +1,16 @@
-import express from 'express'
+import express, { Request, Response } from 'express'
 import Project from '../models/Project'
-import User from '../models/User'
+import { User } from '../models/User'
 import jwt from 'jsonwebtoken'
-import mongoose from 'mongoose'
+import mongoose, { Types } from 'mongoose'
+import { IComment, IProject } from '../types/express'
+import Notification from '../models/Notification'
+import sanitizeHtml from 'sanitize-html'
 
 const router = express.Router()
 
 // Auth middleware
-function auth(req: any, res: any, next: any) {
+function auth(req: Request, res: Response, next: express.NextFunction) {
   const token = req.headers.authorization?.split(' ')[1]
   if (!token) return res.status(401).json({ message: 'No token provided' })
   try {
@@ -19,14 +22,17 @@ function auth(req: any, res: any, next: any) {
   }
 }
 
+// In-memory cache for view tracking (userId or IP -> { projectId: lastViewTimestamp })
+const projectViewCache: Record<string, Record<string, number>> = {}
+
 // Create project
 router.post('/', auth, async (req, res) => {
   try {
     const { title, description, longDescription, tags, githubUrl, demoUrl, images, progress } = req.body
     const project = new Project({
-      title,
-      description,
-      longDescription,
+      title: sanitizeHtml(title),
+      description: sanitizeHtml(description),
+      longDescription: sanitizeHtml(longDescription),
       tags,
       githubUrl,
       demoUrl,
@@ -58,30 +64,22 @@ router.delete('/:id', auth, async (req, res) => {
 })
 
 // Get all projects (with search/filter)
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.error('MongoDB not connected. Current state:', mongoose.connection.readyState)
+      return res.status(500).json({ message: 'Database connection error' })
+    }
+
     const { search, tags, author } = req.query
     const query: any = {}
     
-    // Handle author filter
     if (author) {
-      console.log('Author query param:', author) // Debug log
-      console.log('Author type:', typeof author) // Debug log
-      
-      // Convert author to string and trim any whitespace
       const authorId = String(author).trim()
-      
       if (!mongoose.Types.ObjectId.isValid(authorId)) {
-        console.error('Invalid author ID:', authorId) // Debug log
-        return res.status(400).json({ 
-          message: 'Invalid author ID',
-          details: {
-            providedId: authorId,
-            type: typeof authorId
-          }
-        })
+        return res.status(400).json({ message: 'Invalid author ID' })
       }
-      
       query.author = new mongoose.Types.ObjectId(authorId)
     }
 
@@ -94,10 +92,8 @@ router.get('/', async (req, res) => {
     }
     if (tags) {
       const tagArr = Array.isArray(tags) ? tags : String(tags).split(',')
-      query.tags = { $in: tagArr.map((t: string) => t.toLowerCase()) }
+      query.tags = { $in: tagArr.map((t: any) => String(t).toLowerCase()) }
     }
-
-    console.log('Final query:', JSON.stringify(query, null, 2)) // Debug log
 
     const projects = await Project.find(query)
       .populate('author', 'name email institution avatar')
@@ -105,14 +101,10 @@ router.get('/', async (req, res) => {
       .populate('comments.user', 'name avatar institution')
       .sort({ createdAt: -1 })
 
-    console.log('Found projects:', projects.length) // Debug log
     res.json(projects)
   } catch (error: any) {
-    console.error('Error fetching projects:', error) // Debug log
-    res.status(500).json({ 
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    })
+    console.error('Error in GET /projects:', error)
+    res.status(500).json({ message: error.message || 'Internal server error' })
   }
 })
 
@@ -124,6 +116,7 @@ router.get('/:id', async (req, res) => {
     }
     const project = await Project.findById(req.params.id)
       .populate('author', 'name email institution avatar')
+      .populate('collaborators', 'name username avatar email institution')
     if (!project) return res.status(404).json({ message: 'Project not found' })
     res.json(project)
   } catch (error: any) {
@@ -139,15 +132,26 @@ router.put('/:id', auth, async (req, res) => {
     if (project.author.toString() !== req.userId) {
       return res.status(403).json({ message: 'Not authorized' })
     }
-    const { title, description, longDescription, tags, githubUrl, demoUrl, images, progress } = req.body
-    if (title !== undefined) project.title = title
-    if (description !== undefined) project.description = description
-    if (longDescription !== undefined) project.longDescription = longDescription
+    const { title, description, longDescription, tags, githubUrl, demoUrl, images, progress, collaborators } = req.body
+    if (title !== undefined) project.title = sanitizeHtml(title)
+    if (description !== undefined) project.description = sanitizeHtml(description)
+    if (longDescription !== undefined) project.longDescription = sanitizeHtml(longDescription)
     if (tags !== undefined) project.tags = tags
     if (githubUrl !== undefined) project.githubUrl = githubUrl
     if (demoUrl !== undefined) project.demoUrl = demoUrl
     if (images !== undefined) project.images = images
-    if (progress !== undefined) project.progress = progress
+    if (progress !== undefined) {
+      project.progress = progress
+      // Automatically update status based on progress
+      if (progress >= 100) {
+        project.status = 'completed'
+      } else if (progress === 0) {
+        project.status = 'active'
+      } else if (progress < 100) {
+        project.status = 'active'
+      }
+    }
+    if (collaborators !== undefined) project.collaborators = collaborators
     await project.save()
     await project.populate('author', 'name email institution avatar')
     res.json(project)
@@ -157,16 +161,26 @@ router.put('/:id', auth, async (req, res) => {
 })
 
 // Like a project
-router.post('/:id/like', auth, async (req, res) => {
+router.post('/:id/like', auth, async (req: Request, res: Response) => {
   try {
-    const project = await Project.findById(req.params.id)
+    const project = await Project.findById(req.params.id).populate('author', 'name _id')
     if (!project) return res.status(404).json({ message: 'Project not found' })
-    const userId = req.userId
+    const userId = new Types.ObjectId(req.userId)
     if (project.likes.includes(userId)) {
       return res.status(400).json({ message: 'You have already liked this project' })
     }
     project.likes.push(userId)
     await project.save()
+    // Create notification for author (if not self)
+    if (project.author && project.author._id.toString() !== req.userId) {
+      const liker = await User.findById(req.userId)
+      await Notification.create({
+        user: project.author._id,
+        type: 'like',
+        message: `${liker?.name || 'Someone'} liked your project "${project.title}"`,
+        read: false
+      })
+    }
     res.json({ likes: project.likes.length })
   } catch (error: any) {
     res.status(500).json({ message: error.message })
@@ -174,12 +188,12 @@ router.post('/:id/like', auth, async (req, res) => {
 })
 
 // Unlike a project
-router.post('/:id/unlike', auth, async (req, res) => {
+router.post('/:id/unlike', auth, async (req: Request, res: Response) => {
   try {
     const project = await Project.findById(req.params.id)
     if (!project) return res.status(404).json({ message: 'Project not found' })
-    const userId = req.userId
-    project.likes = project.likes.filter((id: any) => id.toString() !== userId)
+    const userId = new Types.ObjectId(req.userId)
+    project.likes = project.likes.filter((id: Types.ObjectId) => id.toString() !== userId.toString())
     await project.save()
     res.json({ likes: project.likes.length })
   } catch (error: any) {
@@ -188,52 +202,41 @@ router.post('/:id/unlike', auth, async (req, res) => {
 })
 
 // Add a comment to a project
-router.post('/:id/comments', auth, async (req, res) => {
+router.post('/:id/comments', auth, async (req: Request, res: Response) => {
   try {
-    console.log('Adding comment to project:', req.params.id)
     const { text } = req.body
     if (!text || !text.trim()) {
-      console.error('Empty comment text')
       return res.status(400).json({ message: 'Comment text is required' })
     }
 
-    const project = await Project.findById(req.params.id)
+    const project = await Project.findById(req.params.id).populate('author', 'name _id')
     if (!project) {
-      console.error('Project not found:', req.params.id)
       return res.status(404).json({ message: 'Project not found' })
     }
 
-    const comment = { 
-      user: req.userId, 
-      text: text.trim(), 
-      createdAt: new Date() 
+    const comment = {
+      user: new Types.ObjectId(req.userId),
+      text: sanitizeHtml(text.trim()),
+      createdAt: new Date()
     }
-    
-    console.log('Adding comment:', {
-      projectId: project._id,
-      userId: req.userId,
-      textLength: text.length
-    })
 
     project.comments.push(comment)
     await project.save()
-    
-    // Populate the user data for the new comment
     await project.populate('comments.user', 'name avatar institution')
     const newComment = project.comments[project.comments.length - 1]
-    
-    console.log('Comment added successfully:', {
-      commentId: newComment._id,
-      projectId: project._id
-    })
-
+    // Create notification for author (if not self)
+    if (project.author && project.author._id.toString() !== req.userId) {
+      const commenter = await User.findById(req.userId)
+      await Notification.create({
+        user: project.author._id,
+        type: 'comment',
+        message: `${commenter?.name || 'Someone'} commented on your project "${project.title}": "${sanitizeHtml(text.trim())}"`,
+        read: false
+      })
+    }
     res.status(201).json(newComment)
   } catch (error: any) {
-    console.error('Error adding comment:', error)
-    res.status(500).json({ 
-      message: 'Error adding comment',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    })
+    res.status(500).json({ message: error.message })
   }
 })
 
@@ -262,23 +265,15 @@ router.get('/:id/comments', async (req, res) => {
 })
 
 // Delete a comment from a project
-router.delete('/:id/comments/:commentId', auth, async (req, res) => {
+router.delete('/:id/comments/:commentId', auth, async (req: Request, res: Response) => {
   try {
-    console.log('Deleting comment:', {
-      projectId: req.params.id,
-      commentId: req.params.commentId,
-      userId: req.userId
-    })
-
     const project = await Project.findById(req.params.id)
     if (!project) {
-      console.error('Project not found:', req.params.id)
       return res.status(404).json({ message: 'Project not found' })
     }
 
-    const comment = project.comments.id(req.params.commentId)
+    const comment = project.comments.find(c => c._id?.toString() === req.params.commentId)
     if (!comment) {
-      console.error('Comment not found:', req.params.commentId)
       return res.status(404).json({ message: 'Comment not found' })
     }
 
@@ -287,29 +282,129 @@ router.delete('/:id/comments/:commentId', auth, async (req, res) => {
       comment.user.toString() !== req.userId &&
       project.author.toString() !== req.userId
     ) {
-      console.error('Unauthorized comment deletion attempt:', {
-        commentUserId: comment.user,
-        projectAuthorId: project.author,
-        requestUserId: req.userId
-      })
       return res.status(403).json({ message: 'Not authorized to delete this comment' })
     }
 
-    comment.remove()
+    project.comments = project.comments.filter(c => c._id?.toString() !== req.params.commentId)
     await project.save()
-    
-    console.log('Comment deleted successfully:', {
-      commentId: req.params.commentId,
-      projectId: project._id
-    })
 
     res.json({ message: 'Comment deleted successfully' })
   } catch (error: any) {
-    console.error('Error deleting comment:', error)
-    res.status(500).json({ 
-      message: 'Error deleting comment',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    })
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Increment project views
+router.post('/:id/view', async (req: Request, res: Response) => {
+  try {
+    const project = await Project.findById(req.params.id)
+    if (!project) return res.status(404).json({ message: 'Project not found' })
+
+    // Identify user or IP
+    let viewerKey = ''
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+      // Try to get userId from JWT
+      try {
+        const token = req.headers.authorization.split(' ')[1]
+        const payload: any = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
+        viewerKey = payload.id || payload._id || ''
+      } catch {}
+    }
+    if (!viewerKey) {
+      // Fallback to IP address
+      viewerKey = req.ip || req.connection.remoteAddress || 'unknown'
+    }
+
+    // Only count a view if this user/IP hasn't viewed this project in the last 24 hours
+    const now = Date.now()
+    if (!projectViewCache[viewerKey]) projectViewCache[viewerKey] = {}
+    const lastView = projectViewCache[viewerKey][project._id.toString()] || 0
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
+    if (now - lastView > TWENTY_FOUR_HOURS) {
+      project.views += 1
+      await project.save()
+      projectViewCache[viewerKey][project._id.toString()] = now
+    }
+    res.json({ views: project.views })
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Bookmark/Unbookmark project
+router.post('/:id/bookmark', auth, async (req: Request, res: Response) => {
+  try {
+    const project = await Project.findById(req.params.id)
+    if (!project) return res.status(404).json({ message: 'Project not found' })
+    const userId = new Types.ObjectId(req.userId)
+    
+    const isBookmarked = project.bookmarks.includes(userId)
+    if (isBookmarked) {
+      project.bookmarks = project.bookmarks.filter(id => id.toString() !== userId.toString())
+    } else {
+      project.bookmarks.push(userId)
+    }
+    
+    await project.save()
+    res.json({ bookmarked: !isBookmarked })
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Update project status
+router.patch('/:id/status', auth, async (req: Request, res: Response) => {
+  try {
+    const { status } = req.body
+    if (!['active', 'completed', 'on-hold'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' })
+    }
+    
+    const project = await Project.findById(req.params.id)
+    if (!project) return res.status(404).json({ message: 'Project not found' })
+    
+    // Only author can update status
+    if (project.author.toString() !== req.userId) {
+      return res.status(403).json({ message: 'Not authorized' })
+    }
+    
+    project.status = status
+    await project.save()
+    res.json({ status: project.status })
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+// Add/Remove collaborator
+router.post('/:id/collaborators', auth, async (req: Request, res: Response) => {
+  try {
+    const { userId, action } = req.body
+    if (!['add', 'remove'].includes(action)) {
+      return res.status(400).json({ message: 'Invalid action' })
+    }
+    
+    const project = await Project.findById(req.params.id)
+    if (!project) return res.status(404).json({ message: 'Project not found' })
+    
+    // Only author can manage collaborators
+    if (project.author.toString() !== req.userId) {
+      return res.status(403).json({ message: 'Not authorized' })
+    }
+    
+    const collaboratorId = new Types.ObjectId(userId)
+    if (action === 'add') {
+      if (!project.collaborators.includes(collaboratorId)) {
+        project.collaborators.push(collaboratorId)
+      }
+    } else {
+      project.collaborators = project.collaborators.filter(id => id.toString() !== userId)
+    }
+    
+    await project.save()
+    res.json({ collaborators: project.collaborators })
+  } catch (error: any) {
+    res.status(500).json({ message: error.message })
   }
 })
 

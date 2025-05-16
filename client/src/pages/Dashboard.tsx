@@ -60,12 +60,10 @@ const Dashboard = () => {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [readNotifications, setReadNotifications] = useState<Set<string>>(() => {
-    // Optionally, persist in localStorage
     const saved = localStorage.getItem('readNotifications')
     return saved ? new Set(JSON.parse(saved)) : new Set()
   })
   const notificationsRef = useRef<Notification[]>([])
-  const [activeProjectTab, setActiveProjectTab] = useState<'recent' | 'bookmarked'>('recent')
   const [bookmarkedProjects, setBookmarkedProjects] = useState<any[]>([])
   const [collabSearch, setCollabSearch] = useState('')
   const [collabResults, setCollabResults] = useState<any[]>([])

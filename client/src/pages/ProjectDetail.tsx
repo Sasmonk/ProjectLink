@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Bookmark, UserPlus, UserCheck } from 'lucide-react'
+import { UserPlus, UserCheck } from 'lucide-react'
 
 // @ts-ignore
 const API_URL = import.meta.env.VITE_API_URL

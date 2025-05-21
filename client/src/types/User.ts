@@ -24,4 +24,6 @@ export interface Project {
   status: 'open' | 'in-progress' | 'completed';
   createdAt: string;
   updatedAt: string;
+  likes: string[];
+  comments: any[];
 } 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { User, Mail, Lock, AlertCircle } from 'lucide-react'
+import { User, Mail, Lock, AlertCircle, Building } from 'lucide-react'
 
 export default function Register() {
   const navigate = useNavigate()
@@ -11,6 +11,7 @@ export default function Register() {
     email: '',
     password: '',
     confirmPassword: '',
+    institution: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -35,7 +36,7 @@ export default function Register() {
     }
 
     try {
-      await register(formData.name, formData.email, formData.password)
+      await register(formData.name, formData.email, formData.password, formData.institution)
       navigate('/dashboard')
     } catch (err: any) {
       setError(err.message || 'Failed to create account')
@@ -160,6 +161,27 @@ export default function Register() {
                   onChange={handleChange}
                   className="appearance-none rounded-xl relative block w-full pl-10 px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base"
                   placeholder="Confirm password"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="institution" className="sr-only">
+                Institution
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Building className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="institution"
+                  name="institution"
+                  type="text"
+                  required
+                  value={formData.institution}
+                  onChange={handleChange}
+                  className="appearance-none rounded-xl relative block w-full pl-10 px-4 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-base"
+                  placeholder="Institution"
                 />
               </div>
             </div>

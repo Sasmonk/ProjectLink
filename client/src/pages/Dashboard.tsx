@@ -326,18 +326,6 @@ const Dashboard = () => {
     })
     setIsModalOpen(true)
   }
-  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target
-    setEditForm((prev: any) => ({
-      ...prev,
-      [name]: type === 'number' ? Number(value) : value
-    }))
-  }
-  const closeModal = () => {
-    setIsModalOpen(false)
-    setEditId(null)
-    setEditForm(null)
-  }
   const handleSave = async () => {
     if (!editId || !token) return
     setIsSaving(true)
@@ -396,20 +384,6 @@ const Dashboard = () => {
       hour: 'numeric',
       minute: 'numeric'
     })
-  }
-
-  // Update handleNotificationClick to persist read status
-  const handleNotificationClick = (notification: Notification) => {
-    if (!readNotifications.has(notification.id)) {
-      setReadNotifications(prev => new Set([...prev, notification.id]))
-      setNotifications(prev => 
-        prev.map(n => 
-          n.id === notification.id 
-            ? { ...n, read: true }
-            : n
-        )
-      )
-    }
   }
 
   // Fetch bookmarked projects
@@ -659,35 +633,15 @@ const Dashboard = () => {
                     <div className="text-center text-gray-500 py-4">No notifications</div>
                   )}
                   {notifications.map(notification => {
-                    let icon, iconBg, iconColor, label
+                    let icon
                     if (notification.type === 'follow') {
                       icon = <UserPlus className="w-5 h-5" />
-                      iconBg = 'bg-blue-100'
-                      iconColor = 'text-blue-600'
-                      label = 'New Follower'
                     } else if (notification.type === 'like') {
                       icon = <Heart className="w-5 h-5" />
-                      iconBg = 'bg-pink-100'
-                      iconColor = 'text-pink-600'
-                      label = 'Project Liked'
                     } else if (notification.type === 'comment') {
                       icon = <MessageCircle className="w-5 h-5" />
-                      iconBg = 'bg-green-100'
-                      iconColor = 'text-green-600'
-                      label = 'New Comment'
                     } else {
                       icon = <Bell className="w-5 h-5" />
-                      iconBg = 'bg-gray-200'
-                      iconColor = 'text-gray-600'
-                      label = 'Notification'
-                    }
-                    // Extract user name (first word(s) before the action)
-                    let name = ''
-                    let rest = notification.message
-                    const match = notification.message.match(/^([\w\s]+?) (started following you|liked your project|commented on your project)/)
-                    if (match) {
-                      name = match[1]
-                      rest = notification.message.replace(name, '').trim()
                     }
                     const timeAgo = (() => {
                       const now = new Date()
@@ -700,11 +654,12 @@ const Dashboard = () => {
                     })()
                     return (
                       <div key={notification._id || notification.id} className="flex items-start gap-3 bg-white rounded-lg shadow p-3 relative">
-                        <div className={`flex items-center justify-center rounded-full w-9 h-9 ${iconBg}`}>{icon}</div>
+                        <div className="flex items-center justify-center rounded-full w-9 h-9">
+                          {icon}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm text-gray-900">
-                            {name && <span className="font-bold text-primary mr-1">{name}</span>}
-                            {rest}
+                            {notification.message}
                           </div>
                           <div className="text-xs text-gray-500 mt-1">{timeAgo}</div>
                         </div>

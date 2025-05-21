@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { User } from '../types/User'
+import { User, Project } from '../types/User'
 import { exportCSV } from '../utils/exportCSV'
 import { MoreVertical, Shield, UserX, UserCheck, Trash2 } from 'lucide-react'
 
@@ -13,18 +13,6 @@ interface DashboardStats {
   totalLikes: number
   totalComments: number
   activeUsers: number
-}
-
-interface Project {
-  _id: string
-  title: string
-  description: string
-  owner: User
-  members: User[]
-  skills: string[]
-  status: 'open' | 'in-progress' | 'completed'
-  createdAt: string
-  updatedAt: string
 }
 
 export default function Admin() {

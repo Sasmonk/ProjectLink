@@ -36,7 +36,27 @@ interface Stats {
   totalFollowers: number
 }
 
-// @ts-ignore
+interface EditForm {
+  title: string
+  description: string
+  longDescription: string
+  tags: string
+  githubUrl: string
+  demoUrl: string
+  progress: number
+  status: string
+  collaborators: any[]
+}
+
+declare global {
+  interface ImportMetaEnv {
+    VITE_API_URL: string
+  }
+  interface ImportMeta {
+    readonly env: ImportMetaEnv
+  }
+}
+
 const API_URL = import.meta.env.VITE_API_URL
 
 const Dashboard = () => {
@@ -47,7 +67,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<any>(null)
+  const [editForm, setEditForm] = useState<EditForm | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [stats, setStats] = useState<Stats>({
@@ -326,8 +346,18 @@ const Dashboard = () => {
     })
     setIsModalOpen(true)
   }
+
+  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    if (!editForm) return
+    setEditForm({
+      ...editForm,
+      [name]: value
+    })
+  }
+
   const handleSave = async () => {
-    if (!editId || !token) return
+    if (!editId || !token || !editForm) return
     setIsSaving(true)
     try {
       const formData = {
@@ -434,23 +464,27 @@ const Dashboard = () => {
 
   // Add collaborator
   const handleAddCollaborator = (userToAdd: any) => {
-    if (!userToAdd || !userToAdd._id) return;
+    if (!userToAdd || !userToAdd._id || !editForm) return;
     if (user && (user.id === userToAdd._id || user._id === userToAdd._id)) return; // Prevent adding yourself
-    if (editForm.collaborators && editForm.collaborators.filter(Boolean).some((c: any) => c && c._id === userToAdd._id)) return;
-    setEditForm({
+    if (editForm.collaborators.filter(Boolean).some((c: any) => c && c._id === userToAdd._id)) return;
+    
+    const updatedForm: EditForm = {
       ...editForm,
-      collaborators: [...(editForm.collaborators || []), userToAdd]
-    })
+      collaborators: [...editForm.collaborators, userToAdd]
+    }
+    setEditForm(updatedForm)
     setCollabSearch(''); // Clear search field after adding
     setCollabResults([]); // Optionally clear results
   }
 
   // Remove collaborator
   const handleRemoveCollaborator = (userId: string) => {
-    setEditForm({
+    if (!editForm) return;
+    const updatedForm: EditForm = {
       ...editForm,
-      collaborators: (editForm.collaborators || []).filter((c: any) => c && c._id !== userId)
-    })
+      collaborators: editForm.collaborators.filter((c: any) => c && c._id !== userId)
+    }
+    setEditForm(updatedForm)
   }
 
   if (error) {
@@ -683,9 +717,10 @@ const Dashboard = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-title">Title</label>
                   <input
                     id="edit-title"
+                    name="title"
                     type="text"
                     value={editForm.title}
-                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                    onChange={handleEditChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
                     required
                     placeholder="Enter project title"
@@ -697,9 +732,10 @@ const Dashboard = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-description">Short Description</label>
                   <input
                     id="edit-description"
+                    name="description"
                     type="text"
                     value={editForm.description}
-                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    onChange={handleEditChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
                     required
                     placeholder="Brief summary of your project"
@@ -711,8 +747,9 @@ const Dashboard = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-longdesc">Long Description</label>
                   <textarea
                     id="edit-longdesc"
+                    name="longDescription"
                     value={editForm.longDescription}
-                    onChange={(e) => setEditForm({ ...editForm, longDescription: e.target.value })}
+                    onChange={handleEditChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
                     rows={4}
                     placeholder="Detailed description, goals, and features"
@@ -724,9 +761,10 @@ const Dashboard = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-tags">Tags (comma-separated)</label>
                   <input
                     id="edit-tags"
+                    name="tags"
                     type="text"
                     value={editForm.tags}
-                    onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                    onChange={handleEditChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
                     placeholder="e.g., react, node, mongodb"
                     title="Project tags"
@@ -737,9 +775,10 @@ const Dashboard = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-github">GitHub URL</label>
                   <input
                     id="edit-github"
+                    name="githubUrl"
                     type="url"
                     value={editForm.githubUrl}
-                    onChange={(e) => setEditForm({ ...editForm, githubUrl: e.target.value })}
+                    onChange={handleEditChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
                     placeholder="https://github.com/username/repo"
                     title="GitHub repository URL"
@@ -750,9 +789,10 @@ const Dashboard = () => {
                   <label className="block text-sm font-semibold text-gray-700 mb-1" htmlFor="edit-demo">Demo URL</label>
                   <input
                     id="edit-demo"
+                    name="demoUrl"
                     type="url"
                     value={editForm.demoUrl}
-                    onChange={(e) => setEditForm({ ...editForm, demoUrl: e.target.value })}
+                    onChange={handleEditChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-gray-50"
                     placeholder="https://your-demo-url.com"
                     title="Live demo URL"

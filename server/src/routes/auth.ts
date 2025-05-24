@@ -1,90 +1,77 @@
-import express from 'express'
+import express, { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { User } from '../models/User'
+import { auth } from '../middleware/auth'
 
 const router = express.Router()
 
-// Auth middleware
-function auth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const token = req.headers.authorization?.split(' ')[1]
-  if (!token) return res.status(401).json({ message: 'No token provided' })
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { user: { id: string, isAdmin: boolean } }
-    if (!decoded.user || !decoded.user.id) {
-      return res.status(401).json({ message: 'Invalid token' })
-    }
-    req.user = decoded.user
-    next()
-  } catch (err) {
-    console.error('Token verification error:', err)
-    res.status(401).json({ message: 'Invalid token' })
-  }
-}
-
-// Register
-router.post('/register', async (req, res) => {
+// Register new user
+router.post('/register', async (req: Request, res: Response) => {
   try {
     const { name, email, password, institution } = req.body
 
     // Check if user already exists
-    let user = await User.findOne({ email })
-    if (user) {
+    const existingUser = await User.findOne({ email })
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' })
     }
 
     // Create new user
-    user = new User({
+    const user = new User({
       name,
       email,
       password,
       institution: institution || '',
     })
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10)
-    user.password = await bcrypt.hash(password, salt)
-
-    // Save user
     await user.save()
 
-    // Create JWT token
-    const payload = {
-      user: {
-        id: user.id,
-      },
-    }
-
-    jwt.sign(
-      payload,
+    // Generate JWT token
+    const token = jwt.sign(
+      { user: { id: user._id } },
       process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' },
-      (err, token) => {
-        if (err) throw err
-        res.json({ token })
-      }
+      { expiresIn: '24h' }
     )
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Server error' })
+
+    res.status(201).json({
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        institution: user.institution,
+        isAdmin: user.isAdmin
+      }
+    })
+  } catch (error: any) {
+    console.error('Error in register:', error)
+    res.status(500).json({ message: error.message || 'Error registering user' })
   }
 })
 
-// Login
-router.post('/login', async (req, res) => {
+// Login user
+router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body
+
+    // Find user
     const user = await User.findOne({ email })
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' })
-    if (user.banned) return res.status(403).json({ message: 'Account has been banned' })
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
 
+    // Check password
     const isMatch = await user.comparePassword(password)
-    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' })
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid credentials' })
+    }
 
+    // Generate JWT token
     const token = jwt.sign(
-      { user: { id: user._id, isAdmin: user.isAdmin } },
+      { user: { id: user._id } },
       process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
+      { expiresIn: '24h' }
     )
 
     res.json({
@@ -94,23 +81,26 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         institution: user.institution,
-        avatar: user.avatar,
         isAdmin: user.isAdmin
       }
     })
   } catch (error: any) {
-    res.status(500).json({ message: error.message })
+    console.error('Error in login:', error)
+    res.status(500).json({ message: error.message || 'Error logging in' })
   }
 })
 
 // Get current user
-router.get('/me', auth, async (req, res) => {
+router.get('/me', auth, async (req: Request, res: Response) => {
   try {
-    const user = await User.findById(req.user.id).select('-password')
+    const user = await User.findById(req.userId).select('-password')
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
     res.json(user)
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: 'Server error' })
+  } catch (error: any) {
+    console.error('Error in get current user:', error)
+    res.status(500).json({ message: error.message || 'Error getting user' })
   }
 })
 

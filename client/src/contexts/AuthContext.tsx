@@ -7,6 +7,8 @@ interface User {
   email: string
   institution: string
   avatar: string
+  isAdmin: boolean
+  following: string[]
 }
 
 export interface AuthContextType {

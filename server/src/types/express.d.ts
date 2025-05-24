@@ -4,6 +4,7 @@ declare global {
   namespace Express {
     interface Request {
       userId: string;
+      user: IUser;
     }
   }
 }
@@ -29,6 +30,8 @@ export interface IUser extends Document {
   isAdmin: boolean;
   banned: boolean;
   comparePassword(candidatePassword: string): Promise<boolean>;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface IProject extends Document {

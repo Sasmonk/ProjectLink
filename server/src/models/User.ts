@@ -38,6 +38,14 @@ const userSchema = new mongoose.Schema<IUser>({
     type: Boolean,
     default: false
   },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  },
   bio: {
     type: String,
     default: '',
@@ -53,11 +61,7 @@ const userSchema = new mongoose.Schema<IUser>({
   following: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-  }],
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+  }]
 }, {
   timestamps: true,
 })
@@ -77,14 +81,9 @@ userSchema.pre('save', async function(this: IUser, next) {
   }
 })
 
-// Compare password method
+// Add comparePassword method
 userSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
-  try {
-    return await bcrypt.compare(candidatePassword, this.password)
-  } catch (error) {
-    throw error
-  }
+  return bcrypt.compare(candidatePassword, this.password)
 }
 
-const User = mongoose.model<IUser>('User', userSchema)
-export { User } 
+export const User = mongoose.model<IUser>('User', userSchema) 

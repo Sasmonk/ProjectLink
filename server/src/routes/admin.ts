@@ -3,30 +3,19 @@ import { User } from '../models/User'
 import Project from '../models/Project'
 import jwt from 'jsonwebtoken'
 import { Types } from 'mongoose'
+import { Request, Response, NextFunction } from 'express'
 
 const router = express.Router()
 
 // Admin middleware
-function adminAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const token = req.headers.authorization?.split(' ')[1]
-  if (!token) return res.status(401).json({ message: 'No token provided' })
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { user: { id: string, isAdmin: boolean } }
-    const userId = decoded.user && decoded.user.id
-    if (!userId) return res.status(401).json({ message: 'Invalid token' })
-    
-    // Check if user is admin directly from token
-    if (!decoded.user.isAdmin) {
-      return res.status(403).json({ message: 'Not authorized as admin' })
-    }
-    
-    req.userId = userId
-    next()
-  } catch (err) {
-    console.error('Token verification error:', err)
-    res.status(401).json({ message: 'Invalid token' })
+function adminAuth(req: Request, res: Response, next: NextFunction) {
+  // Check if req.user exists and if the user is an admin
+  if (!req.user || !req.user.isAdmin) {
+    return res.status(403).json({ message: 'Not authorized as admin' });
   }
+
+  // If authorized, proceed to the next middleware or route handler
+  next();
 }
 
 // Get admin dashboard stats

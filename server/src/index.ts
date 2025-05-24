@@ -7,6 +7,7 @@ import projectsRoutes from './routes/projects';
 import usersRoutes from './routes/users';
 import adminRoutes from './routes/admin';
 import rateLimit from 'express-rate-limit';
+import { auth } from './middleware/auth';
 
 // Load environment variables
 dotenv.config();
@@ -51,9 +52,10 @@ connectToMongoDB().catch(error => {
 
 // Routes
 app.use('/api/auth', authLimiter, authRoutes);
+// Apply auth middleware to admin routes before the admin router
+app.use('/api/admin', auth, adminRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/users', usersRoutes);
-app.use('/api/admin', adminRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

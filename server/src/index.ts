@@ -16,7 +16,10 @@ const app = express();
 
 // CORS Lockdown
 const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [process.env.CORS_ORIGIN || 'https://your-frontend-domain.com']
+  ? [
+      process.env.CORS_ORIGIN || 'https://project-link-five.vercel.app',
+      'https://project-link-five.vercel.app'
+    ]
   : ['http://localhost:5173'];
 
 app.use(cors({
@@ -27,6 +30,8 @@ app.use(cors({
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Rate Limiting for Auth endpoints

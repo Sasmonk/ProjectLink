@@ -49,8 +49,8 @@ export default function CreateProject() {
         const data = await response.json().catch(() => ({}))
         throw new Error(data.message || 'Failed to create project')
       }
-      // Success: redirect to Browse Projects (which will auto-refresh)
-      navigate('/projects')
+      // Success: redirect to Dashboard (which will auto-refresh)
+      navigate('/dashboard')
     } catch (error: any) {
       setError(error.message || 'Error creating project')
     } finally {

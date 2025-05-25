@@ -376,6 +376,7 @@ const Dashboard = () => {
       })
 
       if (!res.ok) throw new Error('Failed to update project')
+      // Refresh projects and stats
       await fetchProjectsAndStats()
       setIsModalOpen(false)
       setEditId(null)
@@ -398,7 +399,10 @@ const Dashboard = () => {
         },
       })
       if (!res.ok) throw new Error('Failed to delete project')
+      // Update projects list
       setProjects(prev => prev.filter(p => p._id !== id))
+      // Refresh stats and projects
+      await fetchProjectsAndStats()
     } catch (err: any) {
       alert(err.message || 'Error deleting project')
     } finally {

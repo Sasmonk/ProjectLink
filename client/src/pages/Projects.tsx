@@ -56,12 +56,17 @@ export default function Projects() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Failed to update like')
-      setProjects(prev => prev.map(p =>
-        p._id === projectId
-          ? { ...p, likes: liked ? p.likes.filter((id: string) => id !== user.id) : [...(p.likes || []), user.id] }
-          : p
-      ))
-    } catch {}
+      // Fetch fresh project data to update likes count
+      const updatedProjectRes = await fetch(`${API_URL}/projects/${projectId}`)
+      if (updatedProjectRes.ok) {
+        const updatedProject = await updatedProjectRes.json()
+        setProjects(prev => prev.map(p =>
+          p._id === projectId ? updatedProject : p
+        ))
+      }
+    } catch (err) {
+      console.error('Error updating like:', err)
+    }
   }
 
   return (

@@ -98,7 +98,8 @@ export default function ProjectDetail() {
         headers: { Authorization: `Bearer ${token}` }
       })
       if (!res.ok) throw new Error('Failed to update like')
-      fetchProject()
+      // Refresh project data to update likes count
+      await fetchProject()
     } catch (err: any) {
       setError(err.message)
     }
@@ -142,6 +143,9 @@ export default function ProjectDetail() {
       const data = await res.json()
       setComments((prev) => [...prev, data])
       setNewComment('')
+      
+      // Refresh project data to update comments count
+      await fetchProject()
       
       // Show success message
       const successMessage = document.createElement('div')

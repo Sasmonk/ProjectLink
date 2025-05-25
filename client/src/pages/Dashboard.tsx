@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Plus, UserPlus, Heart, MessageCircle, Bell, Users } from 'lucide-react'
 import { exportCSV } from '../utils/exportCSV'
+import LoadingState from '../components/LoadingState'
 
 interface Activity {
   id: string
@@ -491,10 +492,26 @@ const Dashboard = () => {
     setEditForm(updatedForm)
   }
 
+  if (loading) {
+    return <LoadingState 
+      message="Loading your dashboard..." 
+      isServerSpinUp={error?.includes('Failed to fetch')} 
+    />
+  }
+
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-red-500 text-lg font-semibold">
-        {error}
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-pink-50 to-yellow-50">
+        <div className="text-center p-8 bg-white rounded-2xl shadow-xl max-w-md">
+          <h2 className="text-2xl font-bold text-red-600 mb-2">Error Loading Dashboard</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={fetchProjectsAndStats}
+            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
+          >
+            Try Again
+          </button>
+        </div>
       </div>
     )
   }

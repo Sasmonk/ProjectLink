@@ -26,6 +26,25 @@ export interface AuthContextType {
 // @ts-ignore
 const API_URL = import.meta.env.VITE_API_URL
 
+// Add retry mechanism for API calls
+const fetchWithRetry = async (url: string, options: any = {}, retries = 3, delay = 1000) => {
+  try {
+    const response = await fetch(url, options)
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    return response
+  } catch (error) {
+    if (retries > 0) {
+      // Wait for the specified delay
+      await new Promise(resolve => setTimeout(resolve, delay))
+      // Retry the request
+      return fetchWithRetry(url, options, retries - 1, delay * 2)
+    }
+    throw error
+  }
+}
+
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: false,
@@ -86,51 +105,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
+      setLoading(true)
       setError(null)
-      const response = await fetch(`${API_URL}/auth/login`, {
+      const res = await fetchWithRetry(`${API_URL}/auth/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.message || 'Login failed')
-      }
-
-      const data = await response.json()
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || 'Login failed')
+      setUser(data.user)
+      setToken(data.token)
       localStorage.setItem('token', data.token)
-      await fetchUser(data.token)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Login failed')
-      throw error
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    } finally {
+      setLoading(false)
     }
   }
 
   const register = async (name: string, email: string, password: string, institution: string) => {
     try {
+      setLoading(true)
       setError(null)
-      const response = await fetch(`${API_URL}/auth/register`, {
+      const res = await fetchWithRetry(`${API_URL}/auth/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, institution }),
       })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.message || 'Registration failed')
-      }
-
-      const data = await response.json()
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || 'Registration failed')
+      setUser(data.user)
+      setToken(data.token)
       localStorage.setItem('token', data.token)
-      await fetchUser(data.token)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Registration failed')
-      throw error
+    } catch (err: any) {
+      setError(err.message)
+      throw err
+    } finally {
+      setLoading(false)
     }
   }
 

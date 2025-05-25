@@ -8,6 +8,7 @@ import usersRoutes from './routes/users';
 import adminRoutes from './routes/admin';
 import rateLimit from 'express-rate-limit';
 import { auth } from './middleware/auth';
+import mongoose from 'mongoose';
 
 // Load environment variables
 dotenv.config();
@@ -25,14 +26,30 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
 app.use(cors({
   origin: (origin, callback) => {
     // allow requests with no origin (like mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin) {
+      console.log('Request with no origin - allowing');
+      return callback(null, true);
+    }
+    
+    console.log('Checking origin:', origin);
+    console.log('Allowed origins:', allowedOrigins);
+    
+    if (allowedOrigins.includes(origin)) {
+      console.log('Origin allowed:', origin);
+      return callback(null, true);
+    }
+    
+    console.log('Origin not allowed:', origin);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
+
+// Add pre-flight OPTIONS handler
+app.options('*', cors());
 
 // Rate Limiting for Auth endpoints
 const authLimiter = rateLimit({
@@ -46,7 +63,19 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    cors: {
+      allowedOrigins,
+      requestOrigin: req.headers.origin,
+      isAllowed: allowedOrigins.includes(req.headers.origin || '')
+    },
+    mongodb: {
+      connected: mongoose.connection.readyState === 1
+    }
+  });
 });
 
 // Connect to MongoDB
@@ -62,10 +91,29 @@ app.use('/api/admin', auth, adminRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/users', usersRoutes);
 
-// Error handling middleware
+// Add more detailed error logging middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong!' });
+  console.error('Error details:', {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    origin: req.headers.origin,
+    headers: req.headers
+  });
+  
+  if (err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ 
+      message: 'CORS error: Origin not allowed',
+      allowedOrigins,
+      requestOrigin: req.headers.origin
+    });
+  }
+  
+  res.status(500).json({ 
+    message: 'Something went wrong!',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 // Start server

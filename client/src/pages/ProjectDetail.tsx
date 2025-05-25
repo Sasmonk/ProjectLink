@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { UserPlus, UserCheck } from 'lucide-react'
+import { UserPlus, UserCheck, Users } from 'lucide-react'
 
 // @ts-ignore
 const API_URL = import.meta.env.VITE_API_URL
@@ -261,58 +261,78 @@ export default function ProjectDetail() {
                 Updated: {project.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : ''}
               </span>
             </div>
-            {/* Collaborators Inline Section (professional, minimal) */}
-            <div className="flex items-center gap-2 mb-2">
-              {project.collaborators && project.collaborators.filter(Boolean).length > 0 && (
-                <>
-                  <span className="text-sm text-primary font-semibold mr-2">Collaborators:</span>
-                  <div className="flex items-center bg-gray-50 border border-gray-200 rounded-full px-3 py-1 gap-1">
-                    {project.collaborators.filter(Boolean).slice(0, 5).map((collab: any, idx: number) => {
-                      if (!collab) return null;
-                      const displayName = collab.username || collab.name || 'Collaborator';
-                      const avatarUrl = collab.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
-                      return (
-                        <div key={`collab-inline-${collab._id || idx}`} className="relative group flex flex-col items-center">
+            {/* Collaborators Section */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-primary" />
+                  Collaborators
+                </h3>
+                {project.collaborators && project.collaborators.filter(Boolean).length > 0 && (
+                  <span className="text-sm text-gray-500">
+                    {project.collaborators.filter(Boolean).length} {project.collaborators.filter(Boolean).length === 1 ? 'member' : 'members'}
+                  </span>
+                )}
+              </div>
+              
+              {project.collaborators && project.collaborators.filter(Boolean).length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {project.collaborators.filter(Boolean).map((collab: any) => {
+                    if (!collab) return null;
+                    const displayName = collab.username || collab.name || 'Collaborator';
+                    const avatarUrl = collab.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
+                    return (
+                      <div 
+                        key={`collab-${collab._id}`} 
+                        className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200"
+                      >
+                        <div className="relative">
                           <img
                             src={avatarUrl}
                             alt={displayName}
-                            className="w-9 h-9 rounded-full border border-gray-200 bg-white object-cover"
-                            style={{ zIndex: 10 }}
+                            className="w-12 h-12 rounded-full border-2 border-primary/20 object-cover"
                           />
-                          {/* Minimal Tooltip */}
-                          <div className="absolute left-1/2 -translate-x-1/2 -top-2 -translate-y-full bg-gray-800 text-white text-xs font-medium px-3 py-1 rounded shadow opacity-0 group-hover:opacity-100 pointer-events-none z-20 whitespace-nowrap transition-opacity duration-150">
-                            {displayName}
-                          </div>
-                          {/* Follow/Unfollow Button (only on hover) */}
-                          {user && collab._id !== user._id && (
-                            <div className="absolute left-1/2 -translate-x-1/2 top-12 opacity-0 group-hover:opacity-100 pointer-events-auto z-30 transition-opacity duration-150">
-                              {collabFollowing[collab._id] ? (
-                                <button
-                                  className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded-full text-xs flex items-center gap-1 hover:bg-gray-300 transition"
-                                  onClick={() => handleUnfollowCollab(collab._id)}
-                                  title="Unfollow"
-                                >
-                                  <UserCheck className="w-3 h-3" /> Unfollow
-                                </button>
-                              ) : (
-                                <button
-                                  className="px-2 py-0.5 bg-primary text-white rounded-full text-xs flex items-center gap-1 hover:bg-primary/90 transition"
-                                  onClick={() => handleFollowCollab(collab._id)}
-                                  title="Follow"
-                                >
-                                  <UserPlus className="w-3 h-3" /> Follow
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 border-2 border-white rounded-full"></div>
                         </div>
-                      );
-                    })}
-                    {project.collaborators.filter(Boolean).length > 5 && (
-                      <span className="ml-1 text-xs bg-gray-200 text-gray-600 rounded-full px-2 py-0.5 font-semibold border border-gray-300" title={`${project.collaborators.filter(Boolean).length - 5} more`}>+{project.collaborators.filter(Boolean).length - 5}</span>
-                    )}
-                  </div>
-                </>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-gray-900 truncate">{displayName}</h4>
+                            {collab.institution && (
+                              <span className="text-xs text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">
+                                {collab.institution}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500 truncate">{collab.email}</p>
+                        </div>
+                        {user && collab._id !== user._id && (
+                          <div className="flex-shrink-0">
+                            {collabFollowing[collab._id] ? (
+                              <button
+                                className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm flex items-center gap-1.5 hover:bg-gray-200 transition-colors"
+                                onClick={() => handleUnfollowCollab(collab._id)}
+                              >
+                                <UserCheck className="w-4 h-4" /> Following
+                              </button>
+                            ) : (
+                              <button
+                                className="px-3 py-1.5 bg-primary text-white rounded-full text-sm flex items-center gap-1.5 hover:bg-primary/90 transition-colors"
+                                onClick={() => handleFollowCollab(collab._id)}
+                              >
+                                <UserPlus className="w-4 h-4" /> Follow
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-gray-50 rounded-xl border border-gray-100">
+                  <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                  <p className="text-gray-500">No collaborators yet</p>
+                </div>
               )}
             </div>
             {/* Tags */}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Plus, UserPlus, Heart, MessageCircle, Bell } from 'lucide-react'
+import { Plus, UserPlus, Heart, MessageCircle, Bell, Users } from 'lucide-react'
 import { exportCSV } from '../utils/exportCSV'
 
 interface Activity {
@@ -862,62 +862,119 @@ const Dashboard = () => {
                 </div>
                 {/* Collaborators Section */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Collaborators</label>
-                  <input
-                    type="text"
-                    value={collabSearch}
-                    onChange={e => handleCollabSearch(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2"
-                    placeholder="Search users by name or email to add..."
-                  />
-                  {/* Selected Collaborators */}
-                  {editForm.collaborators && editForm.collaborators.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {editForm.collaborators.filter(Boolean).map((collab: any) => (
-                        <div key={collab._id} className="flex items-center gap-1 bg-gray-100 border border-gray-300 rounded-full px-2 py-1">
-                          <img
-                            src={collab.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(collab.name || collab.username || 'User')}`}
-                            alt={collab.name || collab.username || 'User'}
-                            className="w-7 h-7 rounded-full border border-gray-200 bg-white object-cover"
-                          />
-                          <span className="text-sm text-gray-700 font-medium mr-1">{collab.name || collab.username || 'User'}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveCollaborator(collab._id)}
-                            className="text-gray-400 hover:text-red-500 text-lg px-1 rounded-full focus:outline-none"
-                            title="Remove collaborator"
+                  <label className="block text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary" />
+                    Collaborators
+                  </label>
+                  <div className="space-y-4">
+                    {/* Search Input */}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={collabSearch}
+                        onChange={e => handleCollabSearch(e.target.value)}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-white shadow-sm focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all duration-200"
+                        placeholder="Search users by name or email..."
+                      />
+                      {collabLoading && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <div className="w-5 h-5 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Selected Collaborators */}
+                    {editForm.collaborators && editForm.collaborators.length > 0 && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {editForm.collaborators.filter(Boolean).map((collab: any) => (
+                          <div 
+                            key={collab._id} 
+                            className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200"
                           >
-                            &times;
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {collabLoading && <div className="text-xs text-gray-400 mb-2">Searching...</div>}
-                  {collabResults.length > 0 && (
-                    <div className="space-y-2">
-                      {collabResults.map(user => (
-                        <div
-                          key={user._id}
-                          onClick={() => handleAddCollaborator(user)}
-                          className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg cursor-pointer"
-                        >
-                          <img
-                            src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full"
-                          />
-                          <div>
-                            <div className="font-medium text-sm">{user.name}</div>
-                            <div className="text-xs text-gray-500">{user.email}</div>
+                            <div className="relative">
+                              <img
+                                src={collab.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(collab.name || collab.username || 'User')}`}
+                                alt={collab.name || collab.username || 'User'}
+                                className="w-12 h-12 rounded-full border-2 border-primary/20 object-cover"
+                              />
+                              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 border-2 border-white rounded-full"></div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h4 className="font-medium text-gray-900 truncate">{collab.name || collab.username || 'User'}</h4>
+                                {collab.institution && (
+                                  <span className="text-xs text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">
+                                    {collab.institution}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-500 truncate">{collab.email}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCollaborator(collab._id)}
+                              className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                              title="Remove collaborator"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
                           </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Search Results */}
+                    {collabResults.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <h4 className="text-sm font-medium text-gray-700 mb-2">Search Results</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {collabResults.map(user => (
+                            <div
+                              key={user._id}
+                              onClick={() => handleAddCollaborator(user)}
+                              className="flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md cursor-pointer transition-all duration-200"
+                            >
+                              <div className="relative">
+                                <img
+                                  src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
+                                  alt={user.name}
+                                  className="w-12 h-12 rounded-full border-2 border-primary/20 object-cover"
+                                />
+                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-blue-400 border-2 border-white rounded-full"></div>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="font-medium text-gray-900 truncate">{user.name}</h4>
+                                  {user.institution && (
+                                    <span className="text-xs text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full">
+                                      {user.institution}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                              </div>
+                              <div className="flex-shrink-0">
+                                <button
+                                  type="button"
+                                  className="p-2 text-primary hover:bg-primary/10 rounded-full transition-colors"
+                                  title="Add collaborator"
+                                >
+                                  <UserPlus className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {!collabLoading && collabSearch.length >= 2 && collabResults.length === 0 && (
-                    <div className="text-xs text-gray-500 py-2">No users found</div>
-                  )}
+                      </div>
+                    )}
+                    {!collabLoading && collabSearch.length >= 2 && collabResults.length === 0 && (
+                      <div className="text-center py-6 bg-gray-50 rounded-xl border border-gray-100">
+                        <p className="text-gray-500">No users found</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <hr className="my-4 border-gray-200" />
                 {/* Action Buttons */}

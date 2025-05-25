@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
+import LoadingState from '../components/LoadingState'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -13,6 +14,7 @@ export default function Login() {
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isServerSpinUp, setIsServerSpinUp] = useState(false)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -26,15 +28,29 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setIsServerSpinUp(false)
 
     try {
       await login(formData.email, formData.password)
       navigate('/dashboard')
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in')
+      // Check if the error is due to server spin-up
+      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+        setIsServerSpinUp(true)
+        setError('The server is waking up. This may take up to 50 seconds. Please try again in a moment.')
+      } else {
+        setError(err.message || 'Login failed. Please check your credentials.')
+      }
     } finally {
       setLoading(false)
     }
+  }
+
+  if (loading) {
+    return <LoadingState 
+      message="Signing in..." 
+      isServerSpinUp={isServerSpinUp}
+    />
   }
 
   return (
